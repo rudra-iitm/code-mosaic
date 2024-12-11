@@ -8,8 +8,35 @@ socket.on('listening', () => {
     console.log('WebSocket server started and listening on port 8000');
 });
 
+const initialPort = 8080;
+
 const portBindings: Docker.PortMap = {
-    '80/tcp': [{ HostPort: '8080' }]
+    '80/tcp': [{ HostPort: `${initialPort}` }]
+};
+
+const isPortInUse = async (port: string): Promise<boolean> => {
+    try {
+        const containers = await docker.listContainers({ all: true });
+        for (const containerInfo of containers) {
+            const portBindings = containerInfo.Ports?.find(p => p.PublicPort.toString() === port);
+            if (portBindings) {
+                return true;
+            }
+        }
+        return false;
+    } catch (error) {
+        console.error('Error checking port usage:', error);
+        return false;
+    }
+};
+
+const getNextAvailablePort = async (currentPort: number): Promise<number> => {
+    let port = currentPort;
+    while (await isPortInUse(port.toString())) {
+        console.log(`Port ${port} is in use. Trying next port...`);
+        port++;
+    }
+    return port;
 };
 
 const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
@@ -40,6 +67,12 @@ const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
 
 const createContainer = async (projectSlug: string): Promise<void> => {
     try {
+        const encodedProjectSlug = encodeURIComponent(projectSlug); // Encode projectSlug
+        const availablePort = await getNextAvailablePort(initialPort);
+        const portBindings: Docker.PortMap = {
+            '80/tcp': [{ HostPort: `${availablePort}` }]
+        };
+
         const container = await docker.createContainer({
             Image: 'ubuntu:latest',
             AttachStdin: true,
@@ -50,11 +83,11 @@ const createContainer = async (projectSlug: string): Promise<void> => {
             HostConfig: {
                 PortBindings: portBindings
             },
-            name: projectSlug
+            name: encodedProjectSlug // Use the encoded projectSlug
         });
 
         await container.start();
-        console.log(`Container started successfully for project: ${projectSlug}`);
+        console.log(`Container started successfully for project: ${projectSlug} on port ${availablePort}`);
     } catch (error) {
         console.error('Error creating or starting the container:', error);
     }
@@ -62,7 +95,11 @@ const createContainer = async (projectSlug: string): Promise<void> => {
 
 const executeCommandInContainer = async (containerName: string, command: string[]): Promise<void> => {
     try {
+
+        console.log(`Executing command [${command.join(' ')}] in container [${containerName}]...`);
         const container = docker.getContainer(containerName);
+
+        console.log(`Container [${containerName}] found. Executing command...`);
 
         const exec = await container.exec({
             Cmd: command,
@@ -100,16 +137,16 @@ socket.on('connection', (ws: WebSocket) => {
                 await pullAndCreateContainer(projectSlug);
             }
             else if (projectSlug && command) {
-                const container = docker.getContainer(projectSlug);
+                const encodedProjectSlug = encodeURIComponent(projectSlug); // Encode projectSlug here as well
+                const container = docker.getContainer(encodedProjectSlug);
                 const containerInfo = await container.inspect();
 
                 if (!containerInfo.State.Running) {
-                    console.log(`Container [${projectSlug}] is not running. Starting container...`);
+                    console.log(`Container [${encodedProjectSlug}] is not running. Starting container...`);
                     await container.start();
                 }
 
-                // Execute the command inside the container
-                await executeCommandInContainer(projectSlug, command);
+                await executeCommandInContainer(encodedProjectSlug, command);
             }
             else if (projectSlug && command && command[0] === 'kill') {
                 console.log(`Killing container [${projectSlug}]...`);

@@ -5,13 +5,16 @@ import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { File, Folder, Play, Settings, Plus } from "lucide-react";
 import { TreeItem } from "@/components/file-tree.tsx";
+import { useParams } from "react-router-dom";
+import Terminal from "@/components/terminal";
 
 const serverUrl = 'ws://localhost:8000';
 const ws = new WebSocket(serverUrl);
 
 export function CodeEditor() {
+
   const [content, setContent] = React.useState<string>(`// You are editing:`);
-  const projectSlug = 'my-project-adsfsa';
+  const { projectSlug } = useParams();
 
   const handleFileSelect = (fileName: string) => {
     console.log("Selected file:", fileName);
@@ -39,6 +42,7 @@ export function CodeEditor() {
     // return () => {
     //   ws.close();
     // };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Function to handle running the code (sending a command to the server)
@@ -108,14 +112,15 @@ export function CodeEditor() {
         className="border-l border-gray-200 dark:border-gray-700"
       >
         <div className="flex h-full flex-col">
-          <div className="border-b border-gray-200 dark:border-gray-700 p-4 font-medium bg-gray-50 dark:bg-gray-800">
+          <Terminal projectSlug={projectSlug} />
+          {/* <div className="border-b border-gray-200 dark:border-gray-700 p-4 font-medium bg-gray-50 dark:bg-gray-800">
             Terminal
           </div>
           <ScrollArea className="flex-1 bg-black">
             <div className="p-4 font-mono text-green-400">
               {"Setting up container..."}
             </div>
-          </ScrollArea>
+          </ScrollArea> */}
         </div>
       </Resizable>
     </div>
