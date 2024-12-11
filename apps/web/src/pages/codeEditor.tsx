@@ -6,11 +6,51 @@ import { Button } from "@/components/ui/button.tsx";
 import { File, Folder, Play, Settings, Plus } from "lucide-react";
 import { TreeItem } from "@/components/file-tree.tsx";
 
+const serverUrl = 'ws://localhost:8000';
+const ws = new WebSocket(serverUrl);
+
 export function CodeEditor() {
   const [content, setContent] = React.useState<string>(`// You are editing:`);
+  const projectSlug = 'my-project-adsfsa';
 
   const handleFileSelect = (fileName: string) => {
     console.log("Selected file:", fileName);
+  };
+
+  React.useEffect(() => {
+    ws.onopen = () => {
+      console.log('Connected to the server!');
+      const command = ['init'];
+      ws.send(JSON.stringify({ projectSlug, command }));
+    };
+
+    ws.onmessage = (event) => {
+      console.log('Received message:', event.data);
+    };
+
+    ws.onclose = () => {
+      console.log('Disconnected from the server!');
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    // return () => {
+    //   ws.close();
+    // };
+  }, []);
+
+  // Function to handle running the code (sending a command to the server)
+  const handleRunCommand = () => {
+    // Example command, you can adjust this based on your needs
+    const command = ['echo', 'Hello from the client!'];
+    
+    // Send both projectSlug and command to the WebSocket server
+    ws.send(JSON.stringify({
+      projectSlug,
+      command,
+    }));
   };
 
   return (
@@ -42,7 +82,7 @@ export function CodeEditor() {
       <div className="flex-1 flex flex-col">
         <div className="border-b border-gray-200 dark:border-gray-700 p-2 flex items-center justify-between bg-white dark:bg-gray-800">
           <div className="flex space-x-2">
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={handleRunCommand}>
               <Play className="h-4 w-4 mr-2" /> Run
             </Button>
           </div>

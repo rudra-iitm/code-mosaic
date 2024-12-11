@@ -1,44 +1,48 @@
 import Docker from 'dockerode';
-const docker = new Docker();
+import WebSocket, { WebSocketServer } from 'ws';
 
-const portBindings = {
+const docker = new Docker();
+const socket = new WebSocketServer({ port: 8000 });
+
+socket.on('listening', () => {
+    console.log('WebSocket server started and listening on port 8000');
+});
+
+const portBindings: Docker.PortMap = {
     '80/tcp': [{ HostPort: '8080' }]
 };
 
-const pullContainer = async () => {
+const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     try {
-        const stream = await docker.pull('wordpress');
-        // Now follow the progress using the stream returned by pull
-        docker.modem.followProgress(stream, onFinished, onProgress);
+        console.log(`Pulling the container for project: ${projectSlug}`);
+        const stream = await docker.pull('ubuntu:latest');
+
+        docker.modem.followProgress(
+            stream,
+            (err: any) => {
+                if (err) {
+                    console.error('Error during the pull process:', err);
+                } else {
+                    console.log('Pull finished successfully');
+                    createContainer(projectSlug);
+                }
+            },
+            (event: { status?: string }) => {
+                if (event.status) {
+                    process.stdout.write(`${event.status}\n`);
+                }
+            }
+        );
     } catch (error) {
         console.error('Error pulling the container:', error);
     }
-
-    function onFinished(err: any, output: any) {
-        if (err) {
-            console.error('Error during pull process:', err);
-        } else {
-            console.log('Pull finished successfully');
-            createContainer();  // Proceed to create the container once the image is pulled
-        }
-    }
-
-    function onProgress(event: { status: string; progress: string | Uint8Array }) {
-        process.stdout.clearLine(0);
-        process.stdout.cursorTo(0);
-        if (event.status === 'Downloading') {
-            process.stdout.write(event.progress);
-        } else {
-            process.stdout.write(event.status + "\n");
-        }
-    }
 };
 
-const createContainer = async () => {
+const createContainer = async (projectSlug: string): Promise<void> => {
     try {
         const container = await docker.createContainer({
-            Image: 'wordpress',
-            AttachStdin: false,
+            Image: 'ubuntu:latest',
+            AttachStdin: true,
             AttachStdout: true,
             AttachStderr: true,
             Tty: true,
@@ -46,14 +50,85 @@ const createContainer = async () => {
             HostConfig: {
                 PortBindings: portBindings
             },
-            name: 'wordpress-site'
+            name: projectSlug
         });
 
         await container.start();
-        console.log('Container started successfully!');
+        console.log(`Container started successfully for project: ${projectSlug}`);
     } catch (error) {
-        console.error('Error creating or starting container:', error);
+        console.error('Error creating or starting the container:', error);
     }
 };
 
-pullContainer();
+const executeCommandInContainer = async (containerName: string, command: string[]): Promise<void> => {
+    try {
+        const container = docker.getContainer(containerName);
+
+        const exec = await container.exec({
+            Cmd: command,
+            AttachStdout: true,
+            AttachStderr: true
+        });
+
+        const stream = await exec.start({ hijack: true, stdin: true });
+        stream.on('data', (chunk) => {
+            console.log(`Output: `, chunk.toString());
+        });
+
+        stream.on('end', () => {
+            console.log(`Command execution completed in container [${containerName}].`);
+        });
+    } catch (error) {
+        console.error(`Error executing command in container [${containerName}]:`, error);
+    }
+};
+
+// WebSocket handling
+socket.on('connection', (ws: WebSocket) => {
+    console.log('New client connected!');
+    ws.send('Connection established');
+
+    ws.on('message', async (data: WebSocket.Data) => {
+        try {
+            const message = JSON.parse(data.toString());
+            const { projectSlug, command } = message;
+
+            console.log('Received message:', message);
+
+            if (projectSlug && command && command[0] === 'init') {
+                console.log(`Container [${projectSlug}] not found. Pulling and creating the container...`);
+                await pullAndCreateContainer(projectSlug);
+            }
+            else if (projectSlug && command) {
+                const container = docker.getContainer(projectSlug);
+                const containerInfo = await container.inspect();
+
+                if (!containerInfo.State.Running) {
+                    console.log(`Container [${projectSlug}] is not running. Starting container...`);
+                    await container.start();
+                }
+
+                // Execute the command inside the container
+                await executeCommandInContainer(projectSlug, command);
+            }
+            else if (projectSlug && command && command[0] === 'kill') {
+                console.log(`Killing container [${projectSlug}]...`);
+                const container = docker.getContainer(projectSlug);
+                await container.kill();
+                ws.send(`Container [${projectSlug}] killed successfully`);
+            }
+            else {
+                ws.send('Invalid message format. Expected { projectSlug, command }');
+            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+            ws.send('Error processing request');
+        }
+    });
+
+    ws.on('close', () => console.log('Client has disconnected!'));
+
+    ws.onerror = (event: WebSocket.ErrorEvent) => {
+        console.error('WebSocket error:', event);
+    };
+});
