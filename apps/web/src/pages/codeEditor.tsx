@@ -1,21 +1,63 @@
 import { Editor } from "@monaco-editor/react";
-import * as React from "react";
 import { Resizable } from "re-resizable";
 import { ScrollArea } from "@/components/ui/scroll-area.tsx";
 import { Button } from "@/components/ui/button.tsx";
 import { File, Folder, Play, Settings, Plus } from "lucide-react";
 import { TreeItem } from "@/components/file-tree.tsx";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import Terminal from "@/components/terminal";
+import axios from "axios";
+import { useEffect, useRef, useState } from "react";
 
 export function CodeEditor() {
 
-  const [content, setContent] = React.useState<string>(`// You are editing:`);
+  const [content, setContent] = useState<string>(`// You are editing:`);
+  const [listProjectFiles, setListProjectFiles] = useState<string[]>([]);
   const { projectSlug } = useParams();
+  const location = useLocation();
+
+
+  const queryParams = new URLSearchParams(location.search);
 
   const handleFileSelect = (fileName: string) => {
     console.log("Selected file:", fileName);
   };
+
+  const techRef = useRef(queryParams.get('tech'));
+  const projectSlugRef = useRef(projectSlug);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const { data } = await axios.post(`http://localhost:3000/api/projectInit`, {
+          tech: techRef.current,
+          projectSlug: projectSlugRef.current
+        });
+        console.log(data);
+      } catch (error) {
+        console.error("Error fetching project files:", error);
+      }
+    };
+    init();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); 
+
+  useEffect(() => {
+    const fetchProjectFiles = async () => {
+      try {
+        const { data } = await axios.get(`http://localhost:3000/api/listObjects`, {
+          params: {
+            prefix: `workdir/${projectSlug}`
+          }
+        });
+        console.log(data);
+        setListProjectFiles(data);
+      } catch (error) {
+        console.error("Error fetching project files:", error);
+      }
+    };
+    fetchProjectFiles();
+  }, [projectSlug]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
@@ -82,9 +124,7 @@ export function CodeEditor() {
       >
         <div className="flex h-full flex-col">
           <Terminal
-            projectSlug={projectSlug}
-            useSSH={true}
-            sshConfig={{ host: "127.0.0.1", username: "root", password: "password" }}
+            projectSlug={projectSlug || ''}
           />
         </div>
       </Resizable>

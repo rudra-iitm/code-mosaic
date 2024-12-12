@@ -1,19 +1,10 @@
 import Docker from 'dockerode';
-import WebSocket, { WebSocketServer } from 'ws';
-import axios from 'axios';
+import WebSocket from 'ws';
 
-const docker = new Docker();
-const socket = new WebSocketServer({ port: 8000 });
-
-socket.on('listening', () => {
-    console.log('WebSocket server started and listening on port 8000');
-});
-
+export const docker = new Docker();
 const initialPort = 8080;
 
-let currentContainer: string | null = null;
-
-const containerExists = async (name: string): Promise<boolean> => {
+export const containerExists = async (name: string): Promise<boolean> => {
     try {
         const containers = await docker.listContainers({ all: true });
         return containers.some((c) => c.Names.includes(`/${name}`));
@@ -46,7 +37,7 @@ const getNextAvailablePort = async (currentPort: number): Promise<number> => {
     return port;
 };
 
-const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
+export const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     try {
         console.log(`Pulling container for project: ${projectSlug}`);
         const stream = await docker.pull('ubuntu:latest');
@@ -63,7 +54,7 @@ const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     }
 };
 
-const createContainer = async (projectSlug: string): Promise<void> => {
+export const createContainer = async (projectSlug: string): Promise<void> => {
     try {
         const encodedProjectSlug = encodeURIComponent(projectSlug);
         const availablePort = await getNextAvailablePort(initialPort);
@@ -98,7 +89,7 @@ const createContainer = async (projectSlug: string): Promise<void> => {
     }
 };
 
-const retryContainerCheck = async (
+export const retryContainerCheck = async (
     encodedProjectSlug: string,
     retries: number = 10,
     delayMs: number = 1000
@@ -113,10 +104,9 @@ const retryContainerCheck = async (
     return false;
 };
 
-const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): Promise<void> => {
+export const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): Promise<void> => {
     try {
         const encodedProjectSlug = encodeURIComponent(projectSlug);
-        currentContainer = encodedProjectSlug;
 
         const containerExistsAfterRetries = await retryContainerCheck(encodedProjectSlug);
 
@@ -163,79 +153,18 @@ const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): P
         ws.on('close', () => {
             console.log(`Detached from container: ${projectSlug}`);
             stream.end();
-            currentContainer = null;
         });
     } catch (error) {
         console.error(`Error attaching to container [${projectSlug}]:`, error);
         const errorMessage = (error instanceof Error) ? error.message : 'Unknown error';
         ws.send(JSON.stringify({ error: errorMessage }));
-        currentContainer = null;
     }
 };
 
-// const fetchFiles = async (projectSlug: string): Promise<void> => {
-//     try {
-//       const data = await axios.post('http://localhost:3000/api/listObjects', params);
-//       console.log(data);
-//     } catch (error) {
-//         console.error('Error fetching files:', error);
-//     }
-//   };
-
-socket.on('connection', (ws: WebSocket) => {
-    console.log('New client connected!');
-
-    ws.on('message', async (data: WebSocket.Data) => {
-        try {
-            const jsonData = JSON.parse(data.toString());
-            const { projectSlug, command } = jsonData;
-
-            if (projectSlug && command) {
-                const encodedProjectSlug = encodeURIComponent(projectSlug);
-
-                if (command === 'init') {
-                    console.log(`Initializing container for: ${projectSlug}`);
-                    const doesContainerExist = await containerExists(encodedProjectSlug);
-                    if (!doesContainerExist) {
-                        await pullAndCreateContainer(projectSlug);
-                    }
-                    await attachContainerToWebSocket(ws, projectSlug);
-                    // await fetchFiles(projectSlug);
-                } else if (command === 'kill') {
-                    console.log(`Killing container: ${projectSlug}`);
-                    const container = docker.getContainer(encodedProjectSlug);
-                    await container.kill();
-                    ws.send(JSON.stringify({ message: `Container [${projectSlug}] killed.` }));
-                }
-            } else {
-                console.error('Invalid projectSlug or command.');
-                ws.send(JSON.stringify({ error: 'Invalid projectSlug or command.' }));
-            }
-        } catch (error) {
-            if (error instanceof SyntaxError) {
-                const container = docker.getContainer(currentContainer || '');
-                if (container) {
-                    const stream = await container.attach({
-                        stream: true,
-                        stdin: true,
-                        stdout: true,
-                        stderr: true,
-                    });
-                    stream.write(data.toString());
-                }
-            } else {
-                console.error('Error processing message:', error);
-                ws.send(JSON.stringify({ error: 'Error processing message.' }));
-            }
-        }
-    });
-
-    ws.on('close', () => {
-        console.log('Client disconnected.');
-    });
-
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-    });
-});
+export const killContainer = async (projectSlug: string): Promise<void> => {
+    const encodedProjectSlug = encodeURIComponent(projectSlug);
+    const container = docker.getContainer(encodedProjectSlug);
+    await container.kill();
+    console.log(`Container [${projectSlug}] killed.`);
+};
 

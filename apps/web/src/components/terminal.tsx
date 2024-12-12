@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
-import { WebglAddon } from 'xterm-addon-webgl';
 import 'xterm/css/xterm.css';
 
 interface TerminalProps {
@@ -42,7 +41,6 @@ export default function Terminal({ projectSlug }: TerminalProps) {
 
             const fitAddon = new FitAddon();
             terminal.loadAddon(fitAddon);
-            // terminal.loadAddon(new WebglAddon());
             terminal.open(terminalRef.current);
             fitAddon.fit();
 
