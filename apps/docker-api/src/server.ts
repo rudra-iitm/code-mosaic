@@ -1,5 +1,6 @@
 import Docker from 'dockerode';
 import WebSocket, { WebSocketServer } from 'ws';
+import stream from 'stream';
 
 const docker = new Docker();
 const socket = new WebSocketServer({ port: 8000 });
@@ -10,18 +11,25 @@ socket.on('listening', () => {
 
 const initialPort = 8080;
 
-const portBindings: Docker.PortMap = {
-    '80/tcp': [{ HostPort: `${initialPort}` }]
+let currentContainer: string | null = null;
+
+// Helper to check if a container exists
+const containerExists = async (name: string): Promise<boolean> => {
+    try {
+        const containers = await docker.listContainers({ all: true });
+        return containers.some((c) => c.Names.includes(`/${name}`));
+    } catch (error) {
+        console.error('Error checking container existence:', error);
+        return false;
+    }
 };
 
 const isPortInUse = async (port: string): Promise<boolean> => {
     try {
         const containers = await docker.listContainers({ all: true });
         for (const containerInfo of containers) {
-            const portBindings = containerInfo.Ports?.find(p => p.PublicPort.toString() === port);
-            if (portBindings) {
-                return true;
-            }
+            const portBinding = containerInfo.Ports?.find((p) => p.PublicPort?.toString() === port);
+            if (portBinding) return true;
         }
         return false;
     } catch (error) {
@@ -30,6 +38,7 @@ const isPortInUse = async (port: string): Promise<boolean> => {
     }
 };
 
+// Helper to find the next available port
 const getNextAvailablePort = async (currentPort: number): Promise<number> => {
     let port = currentPort;
     while (await isPortInUse(port.toString())) {
@@ -39,133 +48,185 @@ const getNextAvailablePort = async (currentPort: number): Promise<number> => {
     return port;
 };
 
+// Function to pull and create a container
 const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     try {
-        console.log(`Pulling the container for project: ${projectSlug}`);
+        console.log(`Pulling container for project: ${projectSlug}`);
         const stream = await docker.pull('ubuntu:latest');
-
-        docker.modem.followProgress(
-            stream,
-            (err: any) => {
-                if (err) {
-                    console.error('Error during the pull process:', err);
-                } else {
-                    console.log('Pull finished successfully');
-                    createContainer(projectSlug);
-                }
-            },
-            (event: { status?: string }) => {
-                if (event.status) {
-                    process.stdout.write(`${event.status}\n`);
-                }
+        docker.modem.followProgress(stream, async (err: any) => {
+            if (err) {
+                console.error('Error during pull:', err);
+            } else {
+                console.log('Pull complete. Creating container...');
+                await createContainer(projectSlug);
             }
-        );
+        });
     } catch (error) {
-        console.error('Error pulling the container:', error);
+        console.error('Error pulling container:', error);
     }
 };
 
+// Function to create a container
 const createContainer = async (projectSlug: string): Promise<void> => {
     try {
-        const encodedProjectSlug = encodeURIComponent(projectSlug); // Encode projectSlug
+        const encodedProjectSlug = encodeURIComponent(projectSlug);
         const availablePort = await getNextAvailablePort(initialPort);
-        const portBindings: Docker.PortMap = {
+        const portBindings = {
             '80/tcp': [{ HostPort: `${availablePort}` }]
         };
 
         const container = await docker.createContainer({
             Image: 'ubuntu:latest',
+            Tty: true,
+            AttachStdin: true,
+            AttachStdout: true,
+            AttachStderr: true,
+            OpenStdin: true,
+            StdinOnce: false,
+            Cmd: ['bash'],
+            ExposedPorts: { '80/tcp': {} },
+            HostConfig: { PortBindings: portBindings },
+            name: encodedProjectSlug,
+        });
+
+        await container.start();
+        console.log(`Container started for project: ${projectSlug} on port ${availablePort}`);
+    } catch (error) {
+        console.error('Error creating container:', error);
+    }
+};
+
+const retryContainerCheck = async (
+    encodedProjectSlug: string,
+    retries: number = 10,
+    delayMs: number = 1000
+): Promise<boolean> => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+        if (await containerExists(encodedProjectSlug)) {
+            return true;
+        }
+        console.log(`Retry ${attempt + 1}/${retries}: Container ${encodedProjectSlug} not found. Retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait for the delay
+    }
+    return false;
+};
+
+// Function to attach a container to WebSocket with retry logic
+const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): Promise<void> => {
+    try {
+        const encodedProjectSlug = encodeURIComponent(projectSlug);
+        currentContainer = encodedProjectSlug;
+
+        const containerExistsAfterRetries = await retryContainerCheck(encodedProjectSlug);
+
+        if (!containerExistsAfterRetries) {
+            console.error(`Container ${encodedProjectSlug} does not exist after retries.`);
+            ws.send(JSON.stringify({ error: `Container ${projectSlug} does not exist.` }));
+            return;
+        }
+
+        const container = docker.getContainer(encodedProjectSlug);
+        const containerInfo = await container.inspect();
+
+        if (!containerInfo.State.Running) {
+            console.log(`Starting container: ${projectSlug}`);
+            await container.start();
+        }
+
+        console.log(`Attaching to container: ${projectSlug}`);
+        const exec = await container.exec({
             AttachStdin: true,
             AttachStdout: true,
             AttachStderr: true,
             Tty: true,
-            ExposedPorts: { '80/tcp': {} },
-            HostConfig: {
-                PortBindings: portBindings
-            },
-            name: encodedProjectSlug // Use the encoded projectSlug
+            Cmd: ['/bin/bash'],
         });
 
-        await container.start();
-        console.log(`Container started successfully for project: ${projectSlug} on port ${availablePort}`);
+        const stream = await exec.start({
+            Tty: true,
+            stdin: true,
+            hijack: true,
+        });
+
+        // Handle incoming data from the container
+        stream.on('data', (chunk: Buffer) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(chunk);
+            }
+        });
+
+        // Handle incoming messages from the WebSocket
+        ws.on('message', (message: string) => {
+            stream.write(message);
+        });
+
+        ws.on('close', () => {
+            console.log(`Detached from container: ${projectSlug}`);
+            stream.end();
+            currentContainer = null;
+        });
     } catch (error) {
-        console.error('Error creating or starting the container:', error);
+        console.error(`Error attaching to container [${projectSlug}]:`, error);
+        const errorMessage = (error instanceof Error) ? error.message : 'Unknown error';
+        ws.send(JSON.stringify({ error: errorMessage }));
+        currentContainer = null;
     }
 };
 
-const executeCommandInContainer = async (containerName: string, command: string[]): Promise<void> => {
-    try {
-
-        console.log(`Executing command [${command.join(' ')}] in container [${containerName}]...`);
-        const container = docker.getContainer(containerName);
-
-        console.log(`Container [${containerName}] found. Executing command...`);
-
-        const exec = await container.exec({
-            Cmd: command,
-            AttachStdout: true,
-            AttachStderr: true
-        });
-
-        const stream = await exec.start({ hijack: true, stdin: true });
-        stream.on('data', (chunk) => {
-            console.log(`Output: `, chunk.toString());
-        });
-
-        stream.on('end', () => {
-            console.log(`Command execution completed in container [${containerName}].`);
-        });
-    } catch (error) {
-        console.error(`Error executing command in container [${containerName}]:`, error);
-    }
-};
-
-// WebSocket handling
 socket.on('connection', (ws: WebSocket) => {
     console.log('New client connected!');
-    ws.send('Connection established');
 
     ws.on('message', async (data: WebSocket.Data) => {
         try {
-            const message = JSON.parse(data.toString());
-            const { projectSlug, command } = message;
+            const jsonData = JSON.parse(data.toString());
+            const { projectSlug, command } = jsonData;
 
-            console.log('Received message:', message);
+            if (projectSlug && command) {
+                const encodedProjectSlug = encodeURIComponent(projectSlug);
 
-            if (projectSlug && command && command[0] === 'init') {
-                console.log(`Container [${projectSlug}] not found. Pulling and creating the container...`);
-                await pullAndCreateContainer(projectSlug);
-            }
-            else if (projectSlug && command) {
-                const encodedProjectSlug = encodeURIComponent(projectSlug); // Encode projectSlug here as well
-                const container = docker.getContainer(encodedProjectSlug);
-                const containerInfo = await container.inspect();
-
-                if (!containerInfo.State.Running) {
-                    console.log(`Container [${encodedProjectSlug}] is not running. Starting container...`);
-                    await container.start();
+                if (command === 'init') {
+                    console.log(`Initializing container for: ${projectSlug}`);
+                    const doesContainerExist = await containerExists(encodedProjectSlug);
+                    if (!doesContainerExist) {
+                        await pullAndCreateContainer(projectSlug);
+                    }
+                    await attachContainerToWebSocket(ws, projectSlug);
+                } else if (command === 'kill') {
+                    console.log(`Killing container: ${projectSlug}`);
+                    const container = docker.getContainer(encodedProjectSlug);
+                    await container.kill();
+                    ws.send(JSON.stringify({ message: `Container [${projectSlug}] killed.` }));
                 }
-
-                await executeCommandInContainer(encodedProjectSlug, command);
-            }
-            else if (projectSlug && command && command[0] === 'kill') {
-                console.log(`Killing container [${projectSlug}]...`);
-                const container = docker.getContainer(projectSlug);
-                await container.kill();
-                ws.send(`Container [${projectSlug}] killed successfully`);
-            }
-            else {
-                ws.send('Invalid message format. Expected { projectSlug, command }');
+            } else {
+                console.error('Invalid projectSlug or command.');
+                ws.send(JSON.stringify({ error: 'Invalid projectSlug or command.' }));
             }
         } catch (error) {
-            console.error('Error processing WebSocket message:', error);
-            ws.send('Error processing request');
+            // If parsing as JSON fails, treat it as raw input for the container
+            if (error instanceof SyntaxError) {
+                const container = docker.getContainer(currentContainer || '');
+                if (container) {
+                    const stream = await container.attach({
+                        stream: true,
+                        stdin: true,
+                        stdout: true,
+                        stderr: true,
+                    });
+                    stream.write(data.toString());
+                }
+            } else {
+                console.error('Error processing message:', error);
+                ws.send(JSON.stringify({ error: 'Error processing message.' }));
+            }
         }
     });
 
-    ws.on('close', () => console.log('Client has disconnected!'));
+    ws.on('close', () => {
+        console.log('Client disconnected.');
+    });
 
-    ws.onerror = (event: WebSocket.ErrorEvent) => {
-        console.error('WebSocket error:', event);
-    };
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+    });
 });
+

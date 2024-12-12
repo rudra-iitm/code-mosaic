@@ -1,107 +1,108 @@
-import { useEffect, useRef } from 'react'
-import { Terminal as XTerm } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import 'xterm/css/xterm.css'
+import { useEffect, useRef } from 'react';
+import { Terminal as XTerm } from 'xterm';
+import { FitAddon } from 'xterm-addon-fit';
+import { WebglAddon } from 'xterm-addon-webgl';
+import 'xterm/css/xterm.css';
 
 interface TerminalProps {
     projectSlug: string;
-  }
+}
 
-export default function Terminal({projectSlug}: TerminalProps) {
-  const terminalRef = useRef<HTMLDivElement>(null)
-  const xtermRef = useRef<XTerm | null>(null)
-  const commandRef = useRef('')
-  const wsRef = useRef<WebSocket | null>(null)
+export default function Terminal({ projectSlug }: TerminalProps) {
+    const terminalRef = useRef<HTMLDivElement>(null);
 
-  console.log('Project Slug:', projectSlug);
+    useEffect(() => {
+        if (terminalRef.current) {
+            const terminal = new XTerm({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: '"Cascadia Code", Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#282c34',
+                    foreground: '#abb2bf',
+                    black: '#282c34',
+                    brightBlack: '#5c6370',
+                    red: '#e06c75',
+                    brightRed: '#e06c75',
+                    green: '#98c379',
+                    brightGreen: '#98c379',
+                    yellow: '#d19a66',
+                    brightYellow: '#d19a66',
+                    blue: '#61afef',
+                    brightBlue: '#61afef',
+                    magenta: '#c678dd',
+                    brightMagenta: '#c678dd',
+                    cyan: '#56b6c2',
+                    brightCyan: '#56b6c2',
+                    white: '#abb2bf',
+                    brightWhite: '#ffffff',
+                },
+                allowTransparency: true,
+            });
 
-  useEffect(() => {
-    if (terminalRef.current) {
-      xtermRef.current = new XTerm({
-        cursorBlink: true,
-        fontSize: 14,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        theme: {
-          background: '#1e1e1e',
-          foreground: '#ffffff',
-        },
-      })
+            const fitAddon = new FitAddon();
+            terminal.loadAddon(fitAddon);
+            // terminal.loadAddon(new WebglAddon());
+            terminal.open(terminalRef.current);
+            fitAddon.fit();
 
-      const fitAddon = new FitAddon()
-      xtermRef.current.loadAddon(fitAddon)
-      xtermRef.current.open(terminalRef.current)
-      fitAddon.fit()
+            const ws = new WebSocket('ws://localhost:8000');
 
-      xtermRef.current.writeln('Welcome to the frontend terminal!')
-      xtermRef.current.writeln('Type "help" for a list of available commands.')
-      promptUser()
+            ws.onopen = () => {
+                terminal.writeln('Connected to server');
+                ws.send(JSON.stringify({ projectSlug, command: 'init' }));
+            };
 
-      xtermRef.current.onKey(({ key, domEvent }) => {
-        const printable = !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
+            ws.onmessage = (event) => {
+                if (event.data instanceof Blob) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        terminal.write(new Uint8Array(reader.result as ArrayBuffer));
+                    };
+                    reader.readAsArrayBuffer(event.data);
+                } else if (typeof event.data === 'string') {
+                    try {
+                        const jsonData = JSON.parse(event.data);
+                        if (jsonData.error) {
+                            terminal.writeln(`Error: ${jsonData.error}`);
+                        } else if (jsonData.message) {
+                            terminal.writeln(jsonData.message);
+                        }
+                    } catch {
+                        terminal.write(event.data);
+                    }
+                }
+            };
 
-        if (domEvent.key === 'Enter') {
-          processCommand(commandRef.current);
-        } else if (domEvent.key === 'Backspace' || domEvent.keyCode === 8) {
-          if (commandRef.current.length > 0) {
-            commandRef.current = commandRef.current.slice(0, -1);
-            xtermRef.current?.write('\b \b');
-          }
-        } else if (domEvent.ctrlKey && domEvent.key === 'c') {
-          xtermRef.current?.writeln('^C');
-          commandRef.current = '';
-          promptUser();
-        } else if (printable) {
-          commandRef.current += key;
-          console.log('Command:', commandRef.current);
-          xtermRef.current?.write(key);
+            ws.onerror = () => {
+                terminal.writeln('Error: Unable to connect to server');
+            };
+
+            ws.onclose = () => {
+                terminal.writeln('Disconnected from server');
+            };
+
+            terminal.onData((data) => {
+                ws.send(data);
+            });
+
+            const handleResize = () => {
+                fitAddon.fit();
+            };
+
+            window.addEventListener('resize', handleResize);
+
+            return () => {
+                terminal.dispose();
+                ws.close();
+                window.removeEventListener('resize', handleResize);
+            };
         }
-      });
+    }, [projectSlug]);
 
-      wsRef.current = new WebSocket('ws://localhost:8000')
-      wsRef.current.onopen = () => {
-        xtermRef.current?.writeln('Connected to server')
-      }
-      wsRef.current.onmessage = (event) => {
-        xtermRef.current?.writeln(event.data)
-      }
-      wsRef.current.onerror = () => {
-        xtermRef.current?.writeln('Error: Could not connect to server')
-      }
-      wsRef.current.onclose = () => {
-        xtermRef.current?.writeln('Disconnected from server')
-      }
-
-      return () => {
-        xtermRef.current?.dispose()
-        wsRef.current?.close()
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const promptUser = () => {
-    xtermRef.current?.write('\r\n$ ')
-  }
-
-  const processCommand = (currentCommand: string = '') => {
-    xtermRef.current?.writeln('');
-    console.log('Command:', currentCommand);
-    if (currentCommand.trim() !== '') {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({ projectSlug: projectSlug, command: currentCommand.split(' ') })
-        );
-      } else {
-        xtermRef.current?.writeln('Error: Not connected to server');
-      }
-    }
-    commandRef.current = '';
-    promptUser();
-  };
-
-  return (
-    <div className="w-full h-full min-h-[400px] bg-gray-900 p-2 overflow-hidden shadow-lg">
-      <div ref={terminalRef} className="w-full h-full" />
-    </div>
-  )
+    return (
+        <div className="w-full h-full min-h-[400px] bg-[#282c34] p-4 rounded-lg overflow-hidden shadow-lg">
+            <div ref={terminalRef} className="w-full h-full rounded-md overflow-hidden" />
+        </div>
+    );
 }
