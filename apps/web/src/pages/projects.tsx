@@ -8,19 +8,7 @@ import { Search, Home, Box, Rocket, Users, Target, Book, FileText, Globe, Plus, 
 import { useState } from "react"
 import { generateSlug } from 'random-word-slugs'
 import { useNavigate } from "react-router-dom"
-
-const templates = [
-    { name: 'Python', icon: '🐍' },
-    { name: 'Node.js', icon: '⚡' },
-    { name: 'C++', icon: '⚙️' },
-    { name: 'HTML, CSS, JS', icon: '🌐' },
-    { name: 'Java', icon: '☕' },
-    { name: 'Ruby', icon: '💎' },
-    { name: 'Go', icon: '🐹' },
-    { name: 'Rust', icon: '🦀' },
-    { name: 'PHP', icon: '🐘' },
-    { name: 'Swift', icon: '🕊️' },
-    ];
+import { templates } from "@/utils/templates"
 
 export function Projects() {
     const [tech, setTech] = useState<string | null>(null);

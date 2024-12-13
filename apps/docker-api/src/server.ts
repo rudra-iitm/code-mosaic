@@ -173,14 +173,17 @@ const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): P
     }
 };
 
-// const fetchFiles = async (projectSlug: string): Promise<void> => {
-//     try {
-//       const data = await axios.post('http://localhost:3000/api/listObjects', params);
-//       console.log(data);
-//     } catch (error) {
-//         console.error('Error fetching files:', error);
-//     }
-//   };
+const listObjects = async (projectSlug: string): Promise<void> => {
+    try {
+        const params = {
+            projectSlug: projectSlug
+        };
+        const data = await axios.post('http://localhost:3000/api/listObjects', params);
+        console.log(data);
+    } catch (error) {
+        console.error('Error fetching files:', error);
+    }
+  };
 
 socket.on('connection', (ws: WebSocket) => {
     console.log('New client connected!');
@@ -200,7 +203,7 @@ socket.on('connection', (ws: WebSocket) => {
                         await pullAndCreateContainer(projectSlug);
                     }
                     await attachContainerToWebSocket(ws, projectSlug);
-                    // await fetchFiles(projectSlug);
+                    await listObjects(projectSlug);
                 } else if (command === 'kill') {
                     console.log(`Killing container: ${projectSlug}`);
                     const container = docker.getContainer(encodedProjectSlug);
