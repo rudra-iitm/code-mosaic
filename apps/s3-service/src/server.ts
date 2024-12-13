@@ -14,10 +14,6 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-interface GetObjectQuery {
-    filename?: string;
-}
-
 app.post('/api/projectInit', async (req: Request, res: Response) => {
     const {tech, projectSlug} = req.body;
     console.log(tech, projectSlug);
@@ -113,6 +109,7 @@ app.get('/api/listObjects', async (req: Request, res: Response) => {
         const data = await listObjects(`__workdir/${projectSlugStr}`);
         res.status(200).json(data);
     } catch (error) {
+        console.error('Error handling request:', error);
         res.status(400).send({message: 'Invalid request query'});
     }
 });

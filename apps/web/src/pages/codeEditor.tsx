@@ -52,17 +52,19 @@ export function CodeEditor() {
   useEffect(() => {
     const init = async () => {
       try {
-        const listObjects = await axios.post('http://localhost:3000/api/listObjects', {
-          projectSlug: projectSlugRef.current
+        const { data } = await axios.get(`http://localhost:3000/api/listObjects`, {
+          params: {
+            projectSlug: projectSlugRef.current
+          }
         });
-        if (listObjects) {
+        if (data) {
           return;
         }
-        const { data } = await axios.post(`http://localhost:3000/api/projectInit`, {
+        const response = await axios.post(`http://localhost:3000/api/projectInit`, {
           tech: techRef.current,
           projectSlug: projectSlugRef.current
         });
-        console.log(data);
+        console.log(response.data);
       } catch (error) {
         console.error("Error fetching project files:", error);
       }

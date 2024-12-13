@@ -1,6 +1,8 @@
 import Docker from 'dockerode';
 import WebSocket, { WebSocketServer } from 'ws';
 import axios from 'axios';
+import { createWriteStream, promises as fsPromises } from 'fs';
+import path from 'path';
 
 const docker = new Docker();
 const socket = new WebSocketServer({ port: 8000 });
@@ -173,17 +175,53 @@ const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): P
     }
 };
 
-const listObjects = async (projectSlug: string): Promise<void> => {
-    try {
-        const params = {
-            projectSlug: projectSlug
-        };
-        const data = await axios.post('http://localhost:3000/api/listObjects', params);
-        console.log(data);
-    } catch (error) {
-        console.error('Error fetching files:', error);
-    }
-  };
+const fetchInitFolder = async (projectSlug: string): Promise<void> => {
+    console.log(`Fetching initial folder for project: ${projectSlug}`);
+    let retryCount = 0;
+    const maxRetries = 5;
+
+    const fetchFiles = async () => {
+        try {
+            const { data } = await axios.get(`http://localhost:3000/api/listObjects`, {
+                params: { projectSlug }
+            });
+
+            if (!data || data.length === 0) {
+                console.log('No files returned, retrying...');
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    setTimeout(fetchFiles, 5000);
+                } else {
+                    console.error('Max retries reached. Exiting.');
+                }
+                return;
+            }
+
+            for (const { Key } of data) {
+                const slicedKey = Key.split('/').slice(2).join('/');
+                const folderPath = path.dirname(slicedKey);
+
+                await fsPromises.mkdir(path.join(__dirname, 'tmp', folderPath), { recursive: true });
+
+                const filePath = path.join(__dirname, 'tmp', slicedKey);
+
+                const { data } = await axios.get('http://localhost:3000/api/getObject', {
+                    params: { filename: Key },
+                    responseType: 'text',
+                  });
+                const writeStream = createWriteStream(filePath);
+
+                writeStream.write(data);
+                writeStream.end();
+                console.log(`File saved successfully: ${filePath}`);
+            }
+        } catch (error) {
+            console.error('Error fetching files:', error);
+        }
+    };
+
+    fetchFiles();
+};
 
 socket.on('connection', (ws: WebSocket) => {
     console.log('New client connected!');
@@ -203,7 +241,7 @@ socket.on('connection', (ws: WebSocket) => {
                         await pullAndCreateContainer(projectSlug);
                     }
                     await attachContainerToWebSocket(ws, projectSlug);
-                    await listObjects(projectSlug);
+                    await fetchInitFolder(projectSlug);
                 } else if (command === 'kill') {
                     console.log(`Killing container: ${projectSlug}`);
                     const container = docker.getContainer(encodedProjectSlug);
