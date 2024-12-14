@@ -99,8 +99,13 @@ export default function Terminal({ projectSlug }: TerminalProps) {
     }, [projectSlug]);
 
     return (
-        <div className="w-full h-full min-h-[400px] bg-[#282c34] p-4 rounded-lg overflow-hidden shadow-lg">
-            <div ref={terminalRef} className="w-full h-full rounded-md overflow-hidden" />
+        <div className="w-full h-full min-h-[400px] bg-[#282c34] rounded-lg overflow-hidden shadow-lg">
+          <div className="flex items-center justify-start space-x-2 px-4 py-2 bg-[#1e2125]">
+            <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+          </div>
+          <div ref={terminalRef} className="w-full h-[calc(100%-40px)] p-4 rounded-md overflow-hidden" />
         </div>
-    );
+      );
 }

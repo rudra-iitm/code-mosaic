@@ -51,7 +51,7 @@ const getNextAvailablePort = async (currentPort: number): Promise<number> => {
 const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     try {
         console.log(`Pulling container for project: ${projectSlug}`);
-        const stream = await docker.pull('ubuntu:latest');
+        const stream = await docker.pull('node:latest');
         docker.modem.followProgress(stream, async (err: any) => {
             if (err) {
                 console.error('Error during pull:', err);
@@ -70,11 +70,12 @@ const createContainer = async (projectSlug: string): Promise<void> => {
         const encodedProjectSlug = encodeURIComponent(projectSlug);
         const availablePort = await getNextAvailablePort(initialPort);
         const portBindings = {
-            '80/tcp': [{ HostPort: `${availablePort}` }]
+            '80/tcp': [{ HostPort: `${availablePort}` }],
+            '5173': [{ HostPort: '3001' }],
         };
 
         const container = await docker.createContainer({
-            Image: 'ubuntu:latest',
+            Image: 'node:latest',
             Tty: true,
             AttachStdin: true,
             AttachStdout: true,
@@ -125,8 +126,9 @@ const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): P
         if (!containerExistsAfterRetries) {
             console.error(`Container ${encodedProjectSlug} does not exist after retries.`);
             ws.send(JSON.stringify({ error: `Container ${projectSlug} does not exist.` }));
-            await createContainer(encodedProjectSlug);
+            await pullAndCreateContainer(encodedProjectSlug);
         }
+
 
         const container = docker.getContainer(encodedProjectSlug);
         const containerInfo = await container.inspect();
