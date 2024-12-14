@@ -3,9 +3,7 @@ import dotenv from 'dotenv';
 import { Readable } from 'stream';
 import { writeFile, unlink, createReadStream } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
 import mime from 'mime-types';
-dotenv.config();
 
 export const s3Client = new S3Client({
     region: process.env.AWS_REGION,

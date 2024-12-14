@@ -5,8 +5,6 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { z } from 'zod';
 import { Readable } from 'stream';
-import { createWriteStream } from 'fs';
-import { FilterRuleName } from '@aws-sdk/client-s3';
 
 dotenv.config();
 
@@ -113,31 +111,6 @@ app.get('/api/listObjects', async (req: Request, res: Response) => {
         res.status(400).send({message: 'Invalid request query'});
     }
 });
-
-// const download = async () => {
-//     // await copyS3Folder(`templates/${'vite-project'}`, `__workdir/${'trial-project'}`);
-//     const data = await downloadFile('trial-project/package.json');
-
-//     // save this into a file
-//     if (data == void 0) {
-//         console.error('No data received from download');
-//         return;
-//     }
-//     const writeStream = createWriteStream('downloaded-package.json');
-//     if (Buffer.isBuffer(data)) {
-//         writeStream.write(data);
-//         writeStream.end();
-//     } else {
-//         await new Promise((resolve, reject) => {
-//             data.pipe(writeStream)
-//                 .on('error', reject)
-//                 .on('close', resolve);
-//         });
-//     }
-//     console.log(`File downloaded successfully to package.json`);
-// }
-
-// download();
 
 app.listen(3000, () => {
     console.log('Server is running on port 3000');

@@ -40,7 +40,7 @@ const getNextAvailablePort = async (currentPort: number): Promise<number> => {
 export const pullAndCreateContainer = async (projectSlug: string): Promise<void> => {
     try {
         console.log(`Pulling container for project: ${projectSlug}`);
-        const stream = await docker.pull('ubuntu:latest');
+        const stream = await docker.pull('node:latest');
         docker.modem.followProgress(stream, async (err: any) => {
             if (err) {
                 console.error('Error during pull:', err);
@@ -54,16 +54,17 @@ export const pullAndCreateContainer = async (projectSlug: string): Promise<void>
     }
 };
 
-export const createContainer = async (projectSlug: string): Promise<void> => {
+const createContainer = async (projectSlug: string): Promise<void> => {
     try {
         const encodedProjectSlug = encodeURIComponent(projectSlug);
         const availablePort = await getNextAvailablePort(initialPort);
         const portBindings = {
-            '80/tcp': [{ HostPort: `${availablePort}` }]
+            '80/tcp': [{ HostPort: `${availablePort}` }],
+            '5173': [{ HostPort: '3001' }],
         };
 
         const container = await docker.createContainer({
-            Image: 'ubuntu:latest',
+            Image: 'node:latest',
             Tty: true,
             AttachStdin: true,
             AttachStdout: true,
@@ -99,7 +100,7 @@ export const retryContainerCheck = async (
             return true;
         }
         console.log(`Retry ${attempt + 1}/${retries}: Container ${encodedProjectSlug} not found. Retrying in ${delayMs}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs)); // Wait for the delay
+        await new Promise(resolve => setTimeout(resolve, delayMs));
     }
     return false;
 };
@@ -107,14 +108,6 @@ export const retryContainerCheck = async (
 export const attachContainerToWebSocket = async (ws: WebSocket, projectSlug: string): Promise<void> => {
     try {
         const encodedProjectSlug = encodeURIComponent(projectSlug);
-
-        const containerExistsAfterRetries = await retryContainerCheck(encodedProjectSlug);
-
-        if (!containerExistsAfterRetries) {
-            console.error(`Container ${encodedProjectSlug} does not exist after retries.`);
-            ws.send(JSON.stringify({ error: `Container ${projectSlug} does not exist.` }));
-            await createContainer(encodedProjectSlug);
-        }
 
         const container = docker.getContainer(encodedProjectSlug);
         const containerInfo = await container.inspect();

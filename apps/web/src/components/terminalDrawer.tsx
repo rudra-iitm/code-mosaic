@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button.tsx";
 import { TerminalIcon } from "lucide-react";
 import Terminal from "@/components/terminal";
+import { MiniBrowserDialog } from "./miniBrowserDialog";
 
 interface TerminalDrawerProps {
   projectSlug: string;
@@ -24,7 +25,14 @@ export const TerminalDrawer = ({ projectSlug }: TerminalDrawerProps) => {
     <DrawerContent>
       <div className="w-full h-full px-16">
         <DrawerHeader>
-          <DrawerTitle>Terminal</DrawerTitle>
+          <DrawerTitle>
+            <div className="flex items-center justify-between">
+              <div>
+                Terminal
+              </div>
+              <MiniBrowserDialog />
+            </div>
+          </DrawerTitle>
         </DrawerHeader>
         <div className="w-full h-[calc(100%-140px)]">
           <Terminal projectSlug={projectSlug} />
