@@ -74,7 +74,7 @@ function TreeItem({ icon: Icon, label, children, defaultExpanded = false, onSele
       const map: { [key: string]: TreeNode } = {};
     
       objects.forEach((obj) => {
-        const parts = (obj as { Key: string }).Key.split('/');
+        const parts = (obj as { filepath: string }).filepath.split('/');
         const slicedParts = parts.slice(2);
   
         if (slicedParts.length === 0) {
@@ -89,7 +89,7 @@ function TreeItem({ icon: Icon, label, children, defaultExpanded = false, onSele
             const newNode = {
               label: part,
               path: parts.slice(0, index + 1).join('/'),
-              Key: (obj as { Key: string }).Key,
+              Key: (obj as { filepath: string }).filepath,
               children: isFolder ? [] : null,
             };
     

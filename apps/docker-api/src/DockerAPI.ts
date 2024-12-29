@@ -211,15 +211,14 @@ class DockerAPI {
 
         console.log(`Event received: ${eventData}`);
 
-        if (event.includes('CREATE') || event.includes('DELETE')) {
-          const fileTree = await this.getFileTree(containerName, '/workDir');
-          ws.send(JSON.stringify({
+        const fileTree = await this.getFileTree(containerName, '/workDir');
+        ws.send(JSON.stringify({
             cmd: 'file-tree',
             event: event,
             filename: filename,
             content: fileTree
           }));
-        }}
+        }
       });
 
     console.log(`File watcher started for container [${containerName}]`);
@@ -227,11 +226,11 @@ class DockerAPI {
 
   private async getFileTree(containerName: string, dir: string): Promise<any> {
     const exec = await this.docker.getContainer(containerName).exec({
-      Cmd: [`find`, `${dir}`, '-type', 'f'],
+      Cmd: ['find', `${dir}`, '-type', 'f', '-o', '-type', 'd'],
       AttachStdout: true,
-      AttachStderr: true
+      AttachStderr: true,
     });
-
+  
     const stream = await exec.start({ hijack: true, stdin: false });
   
     return new Promise((resolve, reject) => {
@@ -239,28 +238,27 @@ class DockerAPI {
       stream.on('data', (chunk: Buffer) => {
         output += chunk.toString();
       });
+  
       stream.on('end', () => {
         const lines = output.trim().split('\n');
-        const fileTree: any = {};
+        const fileSet = new Set<string>();
+        const fileTree: any[] = [];
   
         lines.forEach(line => {
-          const parts = line.split('/');
-          let current = fileTree;
-
-          parts.forEach((part, index) => {
-            if (index === parts.length - 1) {
-              current[part] = 'file';
-            } else {
-              if (!current[part]) {
-                current[part] = {};
-              }
-              current = current[part];
-            }
+          fileSet.add(line);
+        });
+  
+        fileSet.forEach(path => {
+          const isDirectory = path.endsWith('/');
+          fileTree.push({
+            filepath: path,
+            type: isDirectory ? 'dir' : 'file'
           });
         });
-        
+  
         resolve(fileTree);
       });
+  
       stream.on('error', (err: any) => {
         reject(err);
       });

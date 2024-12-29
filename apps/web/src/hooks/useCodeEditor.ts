@@ -16,32 +16,25 @@ export function useCodeEditor() {
   useEffect(() => {
     const handleFileTreeEvent = (event: MessageEvent) => {
       let data: any;
-
       if (event.data instanceof Blob) {
         const reader = new FileReader();
         reader.onload = () => {
-          try {
-            data = JSON.parse(reader.result as string);
-            if (data.cmd === 'file-tree') {
-              setListObjects(data.content || []);
-            }
-          } catch (error) {
-            console.error("Failed to parse message:", error);
-          }
+          data = (new Uint8Array(reader.result as ArrayBuffer));
         };
-        reader.onerror = (err) => {
-          console.error("Blob read failed:", err);
-        };
-        reader.readAsText(event.data);
-      } else {
+        reader.readAsArrayBuffer(event.data);
+      } else if (typeof event.data === 'string') {
         try {
-          data = JSON.parse(event.data);
-          if (data.cmd === 'file-tree') {
-            setListObjects(data.content || []);
+          const jsonData = JSON.parse(event.data);
+          if (jsonData.error) {
+            console.error("Failed to parse message:", jsonData.error);
+          } else if (jsonData.cmd ==='file-tree') {
+            data = jsonData.content;
           }
-        } catch (error) {
+        } catch(error) {
           console.error("Failed to parse message:", error);
         }
+        console.log('Data', data);
+        setListObjects(data);
       }
     };
 
