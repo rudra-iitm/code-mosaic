@@ -8,7 +8,7 @@ import { FileTree } from "@/components/file-tree";
 import { TerminalDrawer } from "@/components/terminalDrawer";
 import { MiniBrowserDialog } from "@/components/miniBrowserDialog";
 import { useCodeEditor } from "@/hooks/useCodeEditor";
-import { handleCodeRun } from "@/utils/codeEditorUtils";
+import { saveFile } from "@/utils/codeEditorUtils";
 import websocket from "@/hooks/useSocket";
 
 export function CodeEditor() {
@@ -23,6 +23,7 @@ export function CodeEditor() {
   } = useCodeEditor();
 
   const handleFileSelect = (fileName: string) => {
+    websocket.send(JSON.stringify({ projectSlug, command: 'get-file', filepath: fileName }));
     setActiveFile(fileName);
   };
   
@@ -38,7 +39,9 @@ export function CodeEditor() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        handleCodeRun(activeFile, content);
+        if (projectSlug) {
+          saveFile(projectSlug, activeFile, content);
+        }
       }
     };
 
@@ -47,7 +50,7 @@ export function CodeEditor() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [content, activeFile]);
+  }, [content, activeFile, projectSlug]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
@@ -80,7 +83,7 @@ export function CodeEditor() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="border-b border-gray-200 dark:border-gray-700 p-2 flex items-center justify-between bg-white dark:bg-gray-800">
           <div className="flex space-x-2">
-            <Button variant="ghost" size="sm" onClick={() => handleCodeRun(activeFile, content)}>
+            <Button variant="ghost" size="sm">
               <Play className="h-4 w-4 mr-2" /> Run Code
             </Button>
           </div>

@@ -44,7 +44,7 @@ class WebSocketHandler {
           await this.killContainer(ws, projectSlug);
         } else if (filepath && command === 'get-file') {
            await DockerAPI.readFile(ws, projectSlug, filepath);
-        } else if (filepath && command === 'write-file') {
+        } else if (filepath && command === 'save-file') {
            await DockerAPI.writeFile(projectSlug, filepath, content);
         }
       } else {

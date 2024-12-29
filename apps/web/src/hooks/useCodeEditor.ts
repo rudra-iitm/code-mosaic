@@ -29,12 +29,11 @@ export function useCodeEditor() {
             console.error("Failed to parse message:", jsonData.error);
           } else if (jsonData.cmd ==='file-tree') {
             data = jsonData.content;
+            setListObjects(data);
           }
         } catch(error) {
           console.error("Failed to parse message:", error);
         }
-        console.log('Data', data);
-        setListObjects(data);
       }
     };
 
@@ -48,6 +47,38 @@ export function useCodeEditor() {
   useEffect(() => {
     setContent(templates.filter((t) => t.name === techRef.current)[0].starterCode);
   }, []);
+
+  useEffect(() => {
+    const getFile = (event: MessageEvent) => {
+      let data: any;
+      if (event.data instanceof Blob) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          data = (new Uint8Array(reader.result as ArrayBuffer));
+        };
+        reader.readAsArrayBuffer(event.data);
+      } else if (typeof event.data === 'string') {
+        try {
+          const jsonData = JSON.parse(event.data);
+          if (jsonData.error) {
+            console.error("Failed to parse message:", jsonData.error);
+          } else if (jsonData.cmd ==='get-file') {
+            data = jsonData.content;
+            console.log('File content:', data);
+            setContent(data);
+          }
+        } catch(error) {
+          console.error("Failed to parse message:", error);
+        }
+      }
+    };
+
+    websocket.addListener(getFile);
+
+    return () => {
+      websocket.removeListener(getFile);
+    };
+  }, [activeFile]);
 
   return {
     listObjects,

@@ -276,22 +276,22 @@ class DockerAPI {
     try {
       const container = this.docker.getContainer(containerName);
   
-      const fileContent = content.toString('utf-8');
+      const fileContent = content;
 
       const exec = await container.exec({
         AttachStdout: true,
         AttachStderr: true,
-        Cmd: ['sh', '-c', `echo -n "${fileContent}" > /workDir/${filepath}`],
+        AttachStdin: true,
+        Cmd: ['sh', '-c', `cat > ${filepath}`],
       });
 
       const stream = await exec.start({ hijack: true, stdin: false });
 
+      stream.write(fileContent);
+      stream.end(); 
+
       stream.on('data', (chunk: Buffer) => {
         console.log(`Container output: ${chunk.toString()}`);
-      });
-  
-      stream.on('end', () => {
-        console.log(`File written successfully to ${filepath} in container ${containerName}`);
       });
 
       stream.on('error', (err: any) => {
@@ -305,13 +305,13 @@ class DockerAPI {
   public async readFile(ws: WebSocket, containerName: string, filepath: string): Promise<Buffer> {
     try {
       const container = this.docker.getContainer(containerName);
-
+  
       const exec = await container.exec({
         AttachStdout: true,
         AttachStderr: true,
-        Cmd: ['cat', `/workDir/${filepath}`],
+        Cmd: ['cat', filepath],
       });
-
+  
       const stream = await exec.start({ hijack: true, stdin: false });
   
       return new Promise<Buffer>((resolve, reject) => {
@@ -322,8 +322,15 @@ class DockerAPI {
         });
   
         stream.on('end', () => {
-          console.log(`File read successfully from ${filepath} in container ${containerName}`);
-          ws.send(output.toString('utf-8'));
+          try {
+            const content = output.toString('utf-8');
+            console.log('Cleaned Output:', content);
+            ws.send(JSON.stringify({ cmd: 'get-file', content }));
+            resolve(output);
+          } catch (err) {
+            console.error('Error processing output:', err);
+            reject(err);
+          }
         });
   
         stream.on('error', (err: any) => {
