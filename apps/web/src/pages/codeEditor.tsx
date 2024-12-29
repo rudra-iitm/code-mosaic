@@ -9,6 +9,7 @@ import { TerminalDrawer } from "@/components/terminalDrawer";
 import { MiniBrowserDialog } from "@/components/miniBrowserDialog";
 import { useCodeEditor } from "@/hooks/useCodeEditor";
 import { handleCodeRun } from "@/utils/codeEditorUtils";
+import websocket from "@/hooks/useSocket";
 
 export function CodeEditor() {
   const {
@@ -24,6 +25,14 @@ export function CodeEditor() {
   const handleFileSelect = (fileName: string) => {
     setActiveFile(fileName);
   };
+  
+  useEffect(() => {
+    websocket.send(JSON.stringify({ projectSlug, command: 'init' }));
+
+    return () => {
+      websocket.disconnect();
+    };
+  }, [projectSlug]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -1,3 +1,4 @@
+import websocket from "@/hooks/useSocket";
 import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -44,45 +45,36 @@ export default function Terminal({ projectSlug }: TerminalProps) {
             terminal.open(terminalRef.current);
             fitAddon.fit();
 
-            const ws = new WebSocket('ws://localhost:8000');
-
-            ws.onopen = () => {
+            if (!websocket.isConnecting) {
                 terminal.writeln('Connected to server');
-                ws.send(JSON.stringify({ projectSlug, command: 'init' }));
-            };
+            }
 
-            ws.onmessage = (event) => {
+            const handleMessage = (event: MessageEvent) => {
                 if (event.data instanceof Blob) {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        terminal.write(new Uint8Array(reader.result as ArrayBuffer));
-                    };
-                    reader.readAsArrayBuffer(event.data);
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    terminal.write(new Uint8Array(reader.result as ArrayBuffer));
+                  };
+                  reader.readAsArrayBuffer(event.data);
                 } else if (typeof event.data === 'string') {
-                    try {
-                        const jsonData = JSON.parse(event.data);
-                        if (jsonData.error) {
-                            terminal.writeln(`Error: ${jsonData.error}`);
-                        } else if (jsonData.message) {
-                            terminal.writeln(jsonData.message);
-                        }
-                    } catch {
-                        terminal.write(event.data);
+                  try {
+                    const jsonData = JSON.parse(event.data);
+                    if (jsonData.error) {
+                      terminal.writeln(`Error: ${jsonData.error}`);
+                    } else if (jsonData.message) {
+                      terminal.writeln(jsonData.message);
                     }
+                  } catch {
+                    terminal.write(event.data);
+                  }
                 }
-            };
-
-            ws.onerror = () => {
-                terminal.writeln('Error: Unable to connect to server');
-            };
-
-            ws.onclose = () => {
-                terminal.writeln('Disconnected from server');
-            };
-
-            terminal.onData((data) => {
-                ws.send(data);
-            });
+              };
+        
+              websocket.addListener(handleMessage);
+        
+              terminal.onData((data) => {
+                websocket.send(data);
+              });
 
             const handleResize = () => {
                 fitAddon.fit();
@@ -92,7 +84,7 @@ export default function Terminal({ projectSlug }: TerminalProps) {
 
             return () => {
                 terminal.dispose();
-                ws.close();
+                websocket.removeListener(handleMessage);
                 window.removeEventListener('resize', handleResize);
             };
         }
